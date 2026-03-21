@@ -73,7 +73,6 @@ fn process_pcap(path: String) -> () {
     let mut cap = res;
     while let Ok(packet) = cap.next_packet() {
         process_frame(packet.data);
-        return;
     }
 }
 
