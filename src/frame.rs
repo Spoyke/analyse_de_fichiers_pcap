@@ -1,10 +1,12 @@
+use serde::Serialize;
 use std::fmt;
 
+#[derive(Serialize)]
 pub struct Frame {
-    kind: u8,
-    src_mac: [u8; 6],
-    ssid: String,
-    extra_data: ExtraData,
+    pub kind: u8,
+    pub src_mac: [u8; 6],
+    pub ssid: String,
+    pub extra_data: ExtraData,
 }
 
 impl fmt::Display for Frame {
@@ -30,17 +32,18 @@ impl fmt::Display for Frame {
     }
 }
 
-enum ExtraData {
+#[derive(Serialize)]
+pub enum ExtraData {
     DroneData { drone: Drone },
     None,
 }
 
-#[derive(Default)]
-struct Drone {
-    id: String,
-    latitude: f64,
-    longitude: f64,
-    altitude: f64,
+#[derive(Default, Serialize)]
+pub struct Drone {
+    pub id: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub altitude: f64,
 }
 
 struct Tag {
@@ -51,18 +54,15 @@ struct Tag {
 pub fn parse_frame(data: &[u8]) -> Option<Frame> {
     let radiotap_len = (data[2] as usize) | ((data[3] as usize) << 8);
 
-    // Si le premier octet de l'en-tête 802.11 MAC (après l'en-tête Radiotap)
-    // vaut 0x80, il s'agit d'une trame de type 'beacon'
+    // Si le premier octet de l'en-tête 802.11 MAC (après l'en-tête Radiotap) vaut 0x80, il s'agit d'une trame de type 'beacon'
     if data[radiotap_len] != 0x80 {
         return None;
     }
 
-    // L'adresse MAC de la source se trouve à l'indice 'radiotap_len + 10'
-    // de frame
+    // L'adresse MAC de la source se trouve à l'indice 'radiotap_len + 10' de frame
     let src_mac: [u8; 6] = data[radiotap_len + 10..radiotap_len + 16].try_into().ok()?;
 
-    // Les tags commencent après 'Radiotap', les 24 octets de l'en-tête MAC
-    // et des 12 octets de la partie fixe de l'en-tête de gestion
+    // Les tags commencent après 'Radiotap', les 24 octets de l'en-tête MAC et des 12 octets de la partie fixe de l'en-tête de gestion
     let tags = get_tags(&data[radiotap_len + 36..]);
 
     let ssid = tags
