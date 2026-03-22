@@ -50,79 +50,38 @@ struct Tag {
 
 pub fn parse_frame(data: &[u8]) -> Option<Frame> {
     let radiotap_len = (data[2] as usize) | ((data[3] as usize) << 8);
-    let frame_type: u8 = data[radiotap_len];
 
     // Si le premier octet de l'en-tête 802.11 MAC (après l'en-tête Radiotap)
     // vaut 0x80, il s'agit d'une trame de type 'beacon'
-    if frame_type != 0x80 {
+    if data[radiotap_len] != 0x80 {
         return None;
     }
 
     // L'adresse MAC de la source se trouve à l'indice 'radiotap_len + 10'
     // de frame
-    let offset_mac = radiotap_len + 10;
-    let src_mac: [u8; 6] = data[offset_mac..offset_mac + 6]
-        .try_into()
-        .expect("Erreur lors de la récupération de l'adresse MAC");
+    let src_mac: [u8; 6] = data[radiotap_len + 10..radiotap_len + 16].try_into().ok()?;
 
     // Les tags commencent après 'Radiotap', les 24 octets de l'en-tête MAC
     // et des 12 octets de la partie fixe de l'en-tête de gestion
     let tags = get_tags(&data[radiotap_len + 36..]);
 
-    let mut ssid: String = String::new();
-    if let Some(tag) = tags.iter().find(|t| t.kind == 0x00) {
-        ssid = String::from_utf8_lossy(&tag.data).into_owned();
-    }
-
-    let drone_tag = tags.iter().find(|t| t.kind == 0xdd);
-
-    if drone_tag.is_none() {
-        return Some(Frame {
-            kind: frame_type,
-            src_mac,
-            ssid,
-            extra_data: ExtraData::None,
-        });
-    }
-
-    let drone_tags = drone_tag.unwrap();
-    // On ne prend pas les 4 premiers octets qui ne sont pas des tags du drone
-    let inner_tags = get_tags(&drone_tags.data[4..]);
-
-    let drone_id = inner_tags
+    let ssid = tags
         .iter()
-        .find(|t| t.kind == 0x02)
-        .and_then(|t| parse_string(&t.data));
-    let latitude = inner_tags
-        .iter()
-        .find(|t| t.kind == 0x04)
-        .and_then(|t| parse_i32_coord(&t.data));
-    let longitude = inner_tags
-        .iter()
-        .find(|t| t.kind == 0x05)
-        .and_then(|t| parse_i32_coord(&t.data));
-    let altitude = inner_tags
-        .iter()
-        .find(|t| t.kind == 0x06)
-        .and_then(|t| parse_i16_alt(&t.data));
+        .find(|t| t.kind == 0x00)
+        .map(|t| String::from_utf8_lossy(&t.data).into_owned())
+        .unwrap_or_default();
 
-    let extra_data = match drone_id {
-        None => ExtraData::None,
-        Some(id) => ExtraData::DroneData {
-            drone: Drone {
-                id,
-                latitude: latitude.unwrap_or_default(),
-                longitude: longitude.unwrap_or_default(),
-                altitude: altitude.unwrap_or_default(),
-            },
-        },
-    };
+    let extra_data = tags
+        .iter()
+        .find(|t| t.kind == 0xdd)
+        .and_then(|t| parse_drone(t))
+        .map_or(ExtraData::None, |drone| ExtraData::DroneData { drone });
 
     Some(Frame {
-        kind: frame_type,
+        kind: data[radiotap_len],
         src_mac,
-        ssid: ssid,
-        extra_data: extra_data,
+        ssid,
+        extra_data,
     })
 }
 
@@ -148,6 +107,38 @@ fn get_tags(data: &[u8]) -> Vec<Tag> {
     }
 
     tags
+}
+
+fn parse_drone(tag: &Tag) -> Option<Drone> {
+    // On ne prend pas les 4 premiers octets qui ne sont pas des tags du drone
+    let inner_tags = get_tags(&tag.data[4..]);
+
+    let id = inner_tags
+        .iter()
+        .find(|t| t.kind == 0x02)
+        .and_then(|t| parse_string(&t.data))?;
+    let latitude = inner_tags
+        .iter()
+        .find(|t| t.kind == 0x04)
+        .and_then(|t| parse_i32_coord(&t.data))
+        .unwrap_or_default();
+    let longitude = inner_tags
+        .iter()
+        .find(|t| t.kind == 0x05)
+        .and_then(|t| parse_i32_coord(&t.data))
+        .unwrap_or_default();
+    let altitude = inner_tags
+        .iter()
+        .find(|t| t.kind == 0x06)
+        .and_then(|t| parse_i16_alt(&t.data))
+        .unwrap_or_default();
+
+    Some(Drone {
+        id,
+        latitude,
+        longitude,
+        altitude,
+    })
 }
 
 fn parse_string(data: &[u8]) -> Option<String> {
