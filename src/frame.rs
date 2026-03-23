@@ -51,7 +51,23 @@ struct Tag {
     data: Vec<u8>,
 }
 
-pub fn parse_frame(data: &[u8]) -> Option<Frame> {
+/// Ouvre le fichier pcapng et traite trame par trame son contenu
+pub fn process_pcap(path: &str) -> Vec<Frame> {
+    let Ok(mut cap) = pcap::Capture::from_file(path) else {
+        println!("Échec de la lecture du fichier pcap");
+        return Vec::new();
+    };
+
+    let mut frames = Vec::new();
+    while let Ok(packet) = cap.next_packet() {
+        if let Some(frame) = parse_frame(packet.data) {
+            frames.push(frame);
+        }
+    }
+    frames
+}
+
+fn parse_frame(data: &[u8]) -> Option<Frame> {
     let radiotap_len = (data[2] as usize) | ((data[3] as usize) << 8);
 
     // Si le premier octet de l'en-tête 802.11 MAC (après l'en-tête Radiotap) vaut 0x80, il s'agit d'une trame de type 'beacon'
