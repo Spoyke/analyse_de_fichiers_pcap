@@ -1,5 +1,5 @@
-use crate::OutputFormat;
 use crate::frame;
+use crate::OutputFormat;
 
 /// Sauvegarde les trames dans un fichier JSON
 pub fn save_frames(frames: &[frame::Frame], path: &str, format: &OutputFormat) {
